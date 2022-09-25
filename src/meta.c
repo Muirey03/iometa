@@ -334,3 +334,76 @@ void find_meta_constructor_calls(void *kernel, mach_hdr_t *hdr, kptr_t kbase, fi
         }
     }
 }
+
+int find_client_nmethods(metaclass_t *meta) {
+    uint32_t best_guess = -1;
+
+    for (size_t i = 0; i < meta->nmethods; i++) {
+        vtab_entry_t* meth = &meta->methods[i];
+        if (meth->method && meth->code && meth->overrides) {
+            uint32_t Rn = -1;
+
+            if (strstr(meth->method, "externalMethod(") == meth->method) {
+                Rn = 1;
+            } else if (strstr(meth->method, "getTargetAndMethodForIndex(") == meth->method) {
+                Rn = 2;
+            } else if (strstr(meth->method, "externalMethodGated(") == meth->method) {
+                Rn = 1; //usually in *x1, not x1
+            } else {
+                continue;
+            }
+
+            uint32_t* fn = meth->code;
+            uint32_t secondary_reg = -1;
+            uint32_t x4 = -1;
+            //find method table size, not foolproof but does the job most of the time
+            for (size_t i = 0; i < 50; i++) {
+                uint32_t* insn = &fn[i];
+
+                if (is_ret((ret_t*)insn)) break;
+                if (is_b((b_t*)insn)) {
+                    if (x4 != -1) {
+                        for (metaclass_t* p = meta->parentP; p; p = p->parentP) {
+                            if (strcmp(p->name, "IOUserClient2022") == 0) {
+                                return x4;
+                            }
+                        }
+                    }
+                    break;
+                }
+
+                if (is_orr_reg((orr_reg_t*)insn) && ((orr_reg_t*)insn)->Rm == Rn) {
+                    secondary_reg = ((orr_reg_t*)insn)->Rd;
+                    continue;
+                }
+
+                if (is_movz((movz_t*)insn) && ((movz_t*)insn)->Rd == 4) {
+                    x4 = get_movzk_imm((movz_t*)insn);
+                    continue;
+                }
+
+                sub_imm_t* subs = (sub_imm_t*)insn;
+                if (is_subs_imm(subs) && subs->Rd == 31) {        //CMP
+                    uint32_t imm = get_add_sub_imm(subs) + 1;
+                    if (best_guess == -1)
+                        best_guess = imm;
+                    
+                    if (subs->Rn == Rn || subs->Rn == secondary_reg)
+                        return imm;
+                    
+                    //previous statement is a SUB, this is probably a switch
+                    //switches are probably switching on the selector
+                    if (i && is_sub_imm((sub_imm_t*)&fn[i-1])) {
+                        sub_imm_t* sub = (sub_imm_t*)&fn[i-1];
+                        if (sub->Rd == subs->Rn) {
+                            if (sub->Rn == Rn || sub->Rn == secondary_reg)  //switching on selector
+                                return imm;
+                            best_guess = imm;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return best_guess;
+}

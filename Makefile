@@ -2,7 +2,9 @@ VERSION = 1.6.6
 TARGET  = iometa
 SRCDIR  = src
 GENDIR  = gen
-FLAGS   = -Wall -O3 -flto -DVERSION=$(VERSION) -DTIMESTAMP="`date +'%d. %B %Y %H:%M:%S'`" -framework CoreFoundation -framework IOKit -lc++abi -I$(SRCDIR) $(CFLAGS)
+CC = clang
+CFLAGS = -Wno-format
+FLAGS   = -Wall -O3 -flto -DVERSION=$(VERSION) -DTIMESTAMP="`date +'%d. %B %Y %H:%M:%S'`" -lc++abi -I$(SRCDIR) $(CFLAGS)
 
 .PHONY: all aux clean
 

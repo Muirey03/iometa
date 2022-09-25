@@ -43,6 +43,13 @@ static bool iometa_print_init(metaclass_t **list, size_t lsize, opt_t opt, void 
     return true;
 }
 
+static bool emethods_print_class(metaclass_t *meta, opt_t opt, metaclass_t *OSMetaClass, print_sym_t print_sym, void *arg)
+{
+    int nmethods = find_client_nmethods(meta);
+    printf("%s:%d\n", meta->name, nmethods);
+    return true;
+}
+
 static bool iometa_print_class(metaclass_t *meta, opt_t opt, metaclass_t *OSMetaClass, print_sym_t print_sym, void *arg)
 {
     int namelen = (int)(uintptr_t)arg;
@@ -238,6 +245,13 @@ print_t radare2_print =
     .init = radare2_init,
     .print_symbol = radare2_print_symbol,
     .print_class = NULL,
+    .finish = NULL,
+};
+print_t emethods_print =
+{
+    .init = NULL,
+    .print_symbol = NULL,
+    .print_class = emethods_print_class,
     .finish = NULL,
 };
 

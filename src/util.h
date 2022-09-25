@@ -144,7 +144,8 @@ typedef struct
              symmap    :  1,
              vtab      :  1,
              mangle    :  1,
-             _reserved : 15;
+             emethods  :  1,
+             _reserved : 14;
 } opt_t;
 
 static inline bool isws(char ch)

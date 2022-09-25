@@ -29,6 +29,7 @@ typedef struct
 
 extern print_t iometa_print;
 extern print_t radare2_print;
+extern print_t emethods_print;
 
 bool print_all(void *classes, opt_t opt, metaclass_t *OSMetaClass, const char *filt_class, const char *filt_override, const char **filter, kptr_t pure_virtual, kptr_t OSMetaClassConstructor, kptr_t OSMetaClassAltConstructor, print_t *print);
 

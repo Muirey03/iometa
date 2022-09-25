@@ -55,9 +55,9 @@ How this works:
 #include <string.h>             // strcmp, strstr, memcpy, memmem
 #include <strings.h>            // bzero
 #include <sys/mman.h>           // PROT_READ, PROT_WRITE
-#include <CoreFoundation/CoreFoundation.h>
 
-extern CFTypeRef IOCFUnserialize(const char *buffer, CFAllocatorRef allocator, CFOptionFlags options, CFStringRef *errorString);
+extern void *memmem(const void *haystack, size_t haystacklen,const void *needle, size_t needlelen);
+extern int asprintf(char **restrict strp, const char *restrict fmt, ...);
 
 #include "a64.h"
 #include "a64emu.h"
@@ -388,46 +388,6 @@ static void find_imports(void *kernel, size_t kernelsize, mach_hdr_t *hdr, kptr_
     }
 }
 
-static CFTypeRef get_prelink_info(mach_hdr_t *hdr)
-{
-    CFTypeRef info = NULL;
-    CFStringRef err = NULL;
-    FOREACH_CMD(hdr, cmd)
-    {
-        if(cmd->cmd == MACH_SEGMENT)
-        {
-            mach_seg_t *seg = (mach_seg_t*)cmd;
-            if(strcmp("__PRELINK_INFO", seg->segname) == 0 && seg->filesize > 0)
-            {
-                mach_sec_t *secs = (mach_sec_t*)(seg + 1);
-                for(size_t h = 0; h < seg->nsects; ++h)
-                {
-                    if(strcmp("__info", secs[h].sectname) == 0)
-                    {
-                        const char *xml = (const char*)((uintptr_t)hdr + secs[h].offset);
-                        info = IOCFUnserialize(xml, NULL, 0, &err);
-                        if(!info)
-                        {
-                            ERR("IOCFUnserialize: %s", CFStringGetCStringPtr(err, kCFStringEncodingUTF8));
-                            goto out;
-                        }
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-    }
-    /*if(!info)
-    {
-        ERR("Failed to find PrelinkInfo");
-        goto out;
-    }*/
-out:;
-    if(err) CFRelease(err);
-    return info;
-}
-
 static void print_help(const char *self)
 {
     fprintf(stderr, "Usage:\n"
@@ -491,6 +451,7 @@ int main(int argc, const char **argv)
         .symmap    = 0,
         .vtab      = 0,
         .mangle    = 0,
+        .emethods  = 0,
         ._reserved = 0,
     };
     const char *filt_class    = NULL,
@@ -643,6 +604,16 @@ int main(int argc, const char **argv)
                 case 'z':
                 {
                     opt.mangle = 1;
+                    break;
+                }
+                case 'E':
+                {
+                    print = &emethods_print;
+                    opt.emethods  = 1;
+                    opt.meta      = 1;
+                    opt.metaclass = 1;
+                    opt.overrides = 1;
+                    opt.vtab      = 1;
                     break;
                 }
                 default:
@@ -1212,8 +1183,7 @@ int main(int argc, const char **argv)
         }
         if(!meta->parentP)
         {
-            ERR("Failed to find parent of %s (m: " ADDR ", p: " ADDR ")", meta->name, meta->addr, meta->parent);
-            return -1;
+            WRN("Failed to find parent of %s (m: " ADDR ", p: " ADDR ")", meta->name, meta->addr, meta->parent);
         }
     }
     for(size_t i = 0; i < metas.idx; ++i)
@@ -1233,7 +1203,6 @@ int main(int argc, const char **argv)
         }
     }
 
-    CFTypeRef prelink_info = NULL;
     if(want_vtabs)
     {
         ARRDEFEMPTY(relocrange_t, locreloc);
@@ -1256,25 +1225,6 @@ int main(int argc, const char **argv)
                 {
                     ERR("Failed to find PrelinkBase");
                     return -1;
-                }
-
-                if(!prelink_info) prelink_info = get_prelink_info(hdr);
-
-                if(prelink_info)
-                {
-                    CFDataRef data = CFDictionaryGetValue(prelink_info, CFSTR("_PrelinkLinkKASLROffsets"));
-                    if(!data || CFGetTypeID(data) != CFDataGetTypeID())
-                    {
-                        ERR("PrelinkLinkKASLROffsets missing or wrong type");
-                        return -1;
-                    }
-                    kaslr = (const kaslrPackedOffsets_t*)CFDataGetBytePtr(data);
-                    if(!kaslr)
-                    {
-                        ERR("Failed to get PrelinkLinkKASLROffsets byte pointer");
-                        return -1;
-                    }
-                    nlocrel += kaslr->count;
                 }
             }
             DBG("Got %lu local relocations", nlocrel);
@@ -2597,6 +2547,7 @@ int main(int argc, const char **argv)
                     ent->overrides = !!overrides;
                     ent->auth = !!auth;
                     ent->reserved = 0;
+                    ent->code = (uint32_t*)addr2ptr(kernel, func);
 
                     if(authoritative && !structor && pent && !pent->authoritative)
                     {
@@ -2858,6 +2809,7 @@ int main(int argc, const char **argv)
                         ent->overrides = !!overrides;
                         ent->auth = !!auth;
                         ent->reserved = 0;
+                        ent->code = (uint32_t*)addr2ptr(kernel, func);
                     }
                 }
             }
@@ -3238,122 +3190,6 @@ int main(int argc, const char **argv)
                             }
                         }
                         break;
-                    }
-                }
-            }
-            if(hdr->filetype == MH_EXECUTE)
-            {
-                if(!prelink_info) prelink_info = get_prelink_info(hdr);
-
-                if(!prelink_info)
-                {
-                    if(filt_bundle)
-                    {
-                        bundleList = malloc(sizeof(*bundleList));
-                        if(!bundleList)
-                        {
-                            ERRNO("malloc(bundleList)");
-                            return -1;
-                        }
-                    }
-                }
-                else
-                {
-                    CFArrayRef arr = CFDictionaryGetValue(prelink_info, CFSTR("_PrelinkInfoDictionary"));
-                    if(!arr || CFGetTypeID(arr) != CFArrayGetTypeID())
-                    {
-                        ERR("PrelinkInfoDictionary missing or wrong type");
-                        return -1;
-                    }
-                    CFIndex arrlen = CFArrayGetCount(arr);
-                    if(filt_bundle && !bundleList)
-                    {
-                        bundleList = malloc((arrlen + 1) * sizeof(*bundleList));
-                        if(!bundleList)
-                        {
-                            ERRNO("malloc(bundleList)");
-                            return -1;
-                        }
-                    }
-                    for(size_t i = 0; i < arrlen; ++i)
-                    {
-                        CFDictionaryRef dict = CFArrayGetValueAtIndex(arr, i);
-                        if(!dict || CFGetTypeID(dict) != CFDictionaryGetTypeID())
-                        {
-                            WRN("Array entry %lu is not a dict.", i);
-                            continue;
-                        }
-                        CFStringRef cfstr = CFDictionaryGetValue(dict, CFSTR("CFBundleIdentifier"));
-                        if(!cfstr || CFGetTypeID(cfstr) != CFStringGetTypeID())
-                        {
-                            WRN("CFBundleIdentifier missing or wrong type at entry %lu.", i);
-                            if(debug)
-                            {
-                                CFShow(dict);
-                            }
-                            continue;
-                        }
-                        const char *str = CFStringGetCStringPtr(cfstr, kCFStringEncodingUTF8);
-                        if(!str)
-                        {
-                            WRN("Failed to get CFString contents at entry %lu.", i);
-                            if(debug)
-                            {
-                                CFShow(cfstr);
-                            }
-                            continue;
-                        }
-                        if(bundleList)
-                        {
-                            bundleList[bundleIdx++] = str;
-                        }
-                        CFNumberRef cfnum = CFDictionaryGetValue(dict, CFSTR("_PrelinkExecutableLoadAddr"));
-                        if(!cfnum)
-                        {
-                            DBG("Kext %s has no PrelinkExecutableLoadAddr, skipping...", str);
-                            continue;
-                        }
-                        if(CFGetTypeID(cfnum) != CFNumberGetTypeID())
-                        {
-                            WRN("PrelinkExecutableLoadAddr missing or wrong type for kext %s", str);
-                            if(debug)
-                            {
-                                CFShow(cfnum);
-                            }
-                            continue;
-                        }
-                        kptr_t kext_base = 0;
-                        if(!CFNumberGetValue(cfnum, kCFNumberLongLongType, &kext_base))
-                        {
-                            WRN("Failed to get CFNumber contents for kext %s", str);
-                            continue;
-                        }
-                        DBG("Kext %s at " ADDR, str, kext_base);
-                        mach_hdr_t *hdr2 = addr2ptr(kernel, kext_base);
-                        if(!hdr2)
-                        {
-                            WRN("Failed to translate kext header address " ADDR, kext_base);
-                            continue;
-                        }
-                        FOREACH_CMD(hdr2, cmd2)
-                        {
-                            if(cmd2->cmd == MACH_SEGMENT)
-                            {
-                                mach_seg_t *seg2 = (mach_seg_t*)cmd2;
-                                if(strcmp("__DATA", seg2->segname) == 0)
-                                {
-                                    DBG("%s __DATA at " ADDR, str, seg2->vmaddr);
-                                    for(size_t j = 0; j < metas.idx; ++j)
-                                    {
-                                        metaclass_t *meta = &metas.val[j];
-                                        if(meta->addr >= seg2->vmaddr && meta->addr < seg2->vmaddr + seg2->vmsize)
-                                        {
-                                            meta->bundle = str;
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
