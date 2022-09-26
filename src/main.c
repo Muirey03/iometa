@@ -611,7 +611,7 @@ int main(int argc, const char **argv)
                     print = &emethods_print;
                     opt.emethods  = 1;
                     opt.meta      = 1;
-                    opt.metaclass = 1;
+                    opt.inherit   = 1;
                     opt.overrides = 1;
                     opt.vtab      = 1;
                     break;

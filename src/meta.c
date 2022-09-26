@@ -340,8 +340,8 @@ int find_client_nmethods(metaclass_t *meta) {
 
     bool overrides_method = false;
 
-    for (size_t i = 0; i < meta->nmethods; i++) {
-        vtab_entry_t* meth = &meta->methods[i];
+    for (size_t meth_idx = 0; meth_idx < meta->nmethods; meth_idx++) {
+        vtab_entry_t* meth = &meta->methods[meth_idx];
         if (meth->method && meth->code && meth->overrides) {
             uint32_t Rn = -1;
 
