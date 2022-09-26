@@ -391,7 +391,7 @@ static void find_imports(void *kernel, size_t kernelsize, mach_hdr_t *hdr, kptr_
 static void print_help(const char *self)
 {
     fprintf(stderr, "Usage:\n"
-                    "    %s [-aAbBCdeGilmMnoOpRsSvz] [ClassName] [OverrideName] [BundleName] kernel [SymbolMap]\n"
+                    "    %s [-aAbBCdEeGilmMnoOpRsSvz] [ClassName] [OverrideName] [BundleName] kernel [SymbolMap]\n"
                     "\n"
                     "Description:\n"
                     "    Extract and print C++ class information from an arm64 iOS kernel.\n"
@@ -403,6 +403,7 @@ static void print_help(const char *self)
                     "    -a  Synonym for -bmsv\n"
                     "    -A  Synonym for -bimosv\n"
                     "    -b  Print bundle identifier\n"
+                    "    -E  Print external method count\n"
                     "    -i  Print inherited virtual methods (implies -o)\n"
                     "    -l  Print OSMetaClass subclasses\n"
                     "    -m  Print OSMetaClass addresses\n"
