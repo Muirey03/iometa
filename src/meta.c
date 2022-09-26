@@ -336,7 +336,9 @@ void find_meta_constructor_calls(void *kernel, mach_hdr_t *hdr, kptr_t kbase, fi
 }
 
 int find_client_nmethods(metaclass_t *meta) {
-    uint32_t best_guess = -1;
+    uint32_t best_guess = 0;
+
+    bool overrides_method = false;
 
     for (size_t i = 0; i < meta->nmethods; i++) {
         vtab_entry_t* meth = &meta->methods[i];
@@ -353,11 +355,13 @@ int find_client_nmethods(metaclass_t *meta) {
                 continue;
             }
 
+            overrides_method = true;
+
             uint32_t* fn = meth->code;
             uint32_t secondary_reg = -1;
             uint32_t x4 = -1;
             //find method table size, not foolproof but does the job most of the time
-            for (size_t i = 0; i < 50; i++) {
+            for (size_t i = 0; i < 100; i++) {
                 uint32_t* insn = &fn[i];
 
                 if (is_ret((ret_t*)insn)) break;
@@ -405,5 +409,5 @@ int find_client_nmethods(metaclass_t *meta) {
             }
         }
     }
-    return best_guess;
+    return overrides_method ? best_guess : -1;
 }
