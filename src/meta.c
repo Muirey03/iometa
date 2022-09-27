@@ -339,6 +339,7 @@ int find_client_nmethods(metaclass_t *meta) {
     uint32_t best_guess = 0;
 
     bool overrides_method = false;
+    bool not_2022 = false;
 
     for (size_t meth_idx = 0; meth_idx < meta->nmethods; meth_idx++) {
         vtab_entry_t* meth = &meta->methods[meth_idx];
@@ -359,30 +360,26 @@ int find_client_nmethods(metaclass_t *meta) {
 
             uint32_t* fn = meth->code;
             uint32_t secondary_reg = -1;
-            uint32_t x4 = -1;
+
             //find method table size, not foolproof but does the job most of the time
             for (size_t i = 0; i < 100; i++) {
                 uint32_t* insn = &fn[i];
 
                 if (is_ret((ret_t*)insn)) break;
-                if (is_b((b_t*)insn)) {
-                    if (x4 != -1) {
-                        for (metaclass_t* p = meta->parentP; p; p = p->parentP) {
-                            if (strcmp(p->name, "IOUserClient2022") == 0) {
-                                return x4;
-                            }
-                        }
-                    }
-                    break;
-                }
+                if (is_b((b_t*)insn)) break;
 
                 if (is_orr_reg((orr_reg_t*)insn) && ((orr_reg_t*)insn)->Rm == Rn) {
                     secondary_reg = ((orr_reg_t*)insn)->Rd;
                     continue;
                 }
 
-                if (is_movz((movz_t*)insn) && ((movz_t*)insn)->Rd == 4) {
-                    x4 = get_movzk_imm((movz_t*)insn);
+                if (!not_2022 && Rn == 1 && is_movz((movz_t*)insn) && ((movz_t*)insn)->Rd == 4 && ((movz_t*)insn)->sf == 0) {
+                    for (metaclass_t* p = meta->parentP; p; p = p->parentP) {
+                        if (strcmp(p->name, "IOUserClient2022") == 0) {
+                            return get_movzk_imm((movz_t*)insn);;
+                        }
+                    }
+                    not_2022 = true;
                     continue;
                 }
 
