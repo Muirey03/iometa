@@ -1412,6 +1412,7 @@ int main(int argc, const char **argv)
                         {
                             STEP_MEM(uint32_t, mem, (uintptr_t)kernel + seg->fileoff, seg->filesize, 3)
                             {
+                                bti_t     *bti = (bti_t*    )(mem - 1);
                                 adr_t     *adr = (adr_t*    )(mem + 0);
                                 add_imm_t *add = (add_imm_t*)(mem + 1);
                                 ret_t     *ret = (ret_t*    )(mem + 2);
@@ -1446,6 +1447,10 @@ int main(int argc, const char **argv)
                                         }
                                         else
                                         {
+                                            if((void*)bti >= kernel && is_bti(bti))
+                                            {
+                                                refloc -= 4;
+                                            }
                                             DBG("OSMetaClass::getMetaClass: " ADDR, refloc);
                                             OSObjectGetMetaClass = refloc;
                                         }
@@ -2020,6 +2025,10 @@ int main(int argc, const char **argv)
                                             else if((state.valid & 0xff) == 0xf && (state.wide & 0xf) == 0x9) // hell do I know
                                             {
                                                 allocsz = state.x[1];
+                                            }
+                                            else if((state.valid & 0xff) == 0x3 && (state.wide & 0x1ff) == 0x1) // muirey: hell do I know
+                                            {
+                                                allocsz = state.x[(state.valid & 0x100) ? 8 : 1];
                                             }
                                             else
                                             {
