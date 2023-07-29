@@ -78,7 +78,7 @@ typedef CFArrayRef CFMutableArrayRef;
 
 CFMutableArrayRef CFArrayCreateMutable(CFAllocatorRef allocator, CFIndex capacity, const CFArrayCallBacks *callBacks);
 CFIndex CFArrayGetCount(CFArrayRef theArray);
-const void * CFArrayGetValueAtIndex(CFArrayRef theArray, CFIndex idx);
+void * CFArrayGetValueAtIndex(CFArrayRef theArray, CFIndex idx);
 void CFArrayAppendValue(CFMutableArrayRef theArray, const void *value);
 
 /* CFDictionary */
@@ -93,7 +93,7 @@ typedef CFDictionaryRef CFMutableDictionaryRef;
 
 CFMutableDictionaryRef CFDictionaryCreateMutable(CFAllocatorRef allocator, CFIndex capacity, const CFDictionaryKeyCallBacks *keyCallBacks, const CFDictionaryValueCallBacks *valueCallBacks);
 void CFDictionarySetValue(CFMutableDictionaryRef theDict, const void *key, const void *value);
-const void * CFDictionaryGetValue(CFDictionaryRef theDict, const void *key);
+void * CFDictionaryGetValue(CFDictionaryRef theDict, const void *key);
 
 /* CFBoolean */
 
