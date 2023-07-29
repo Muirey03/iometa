@@ -1033,7 +1033,7 @@ buildNumber(parser_state_t *state, object_t *o)
 };
 
 object_t *
-buildBoolean(parser_state_t *state __unused, object_t *o)
+buildBoolean(parser_state_t *state, object_t *o)
 {
 	o->object = CFRetain((o->number == 0) ? kCFBooleanFalse : kCFBooleanTrue);
 	return o;

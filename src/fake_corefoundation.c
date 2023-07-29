@@ -71,7 +71,7 @@ CFStringRef CFStringMakeConstantString(const char* cStr) {
     return str;
 }
 
-CFStringRef CFStringCreateWithCString(__unused CFAllocatorRef alloc, const char *cStr, CFStringEncoding encoding) {
+CFStringRef CFStringCreateWithCString(CFAllocatorRef alloc, const char *cStr, CFStringEncoding encoding) {
     if (encoding != kCFStringEncodingUTF8) {
         ERR("Unsupported string encoding.\n");
     }
@@ -83,7 +83,7 @@ CFStringRef CFStringCreateWithCString(__unused CFAllocatorRef alloc, const char 
     return str;
 }
 
-CFStringRef CFStringCreateWithFormat(__unused CFAllocatorRef alloc, __unused CFTypeRef formatOptions, CFStringRef format, ...) {
+CFStringRef CFStringCreateWithFormat(CFAllocatorRef alloc, CFTypeRef formatOptions, CFStringRef format, ...) {
     va_list args;
     va_start(args, format);
     char* cStr;
@@ -94,7 +94,7 @@ CFStringRef CFStringCreateWithFormat(__unused CFAllocatorRef alloc, __unused CFT
     return str;
 }
 
-const char * CFStringGetCStringPtr(CFStringRef theString, __unused CFStringEncoding encoding) {
+const char * CFStringGetCStringPtr(CFStringRef theString, CFStringEncoding encoding) {
     return theString->data;
 }
 
@@ -109,7 +109,7 @@ void CFStringFree(CFStringRef str) {
 
 CFTypeCreate(CFData, CFDataFree);
 
-CFDataRef CFDataCreate(__unused CFAllocatorRef allocator, const uint8_t *bytes, CFIndex length) {
+CFDataRef CFDataCreate(CFAllocatorRef allocator, const uint8_t *bytes, CFIndex length) {
     CFDataRef data = CFAlloc(CFData);
     CFInit(data, CFData);
     data->data = malloc(length);
@@ -135,7 +135,7 @@ void CFDataFree(CFDataRef data) {
 
 CFTypeCreate(CFNumber, CFNumberFree);
 
-CFNumberRef CFNumberCreate(__unused CFAllocatorRef allocator, CFNumberType theType, const void *valuePtr) {
+CFNumberRef CFNumberCreate(CFAllocatorRef allocator, CFNumberType theType, const void *valuePtr) {
     CFNumberRef num = CFAlloc(CFNumber);
     CFInit(num, CFNumber);
     uint64_t value;
@@ -179,7 +179,7 @@ CFTypeCreate(CFArray, CFArrayFree);
 
 CFArrayCallBacks kCFTypeArrayCallBacks = (CFArrayCallBacks)&kCFTypeArrayCallBacks;
 
-CFMutableArrayRef CFArrayCreateMutable(__unused CFAllocatorRef allocator, CFIndex capacity, const CFArrayCallBacks *callBacks) {
+CFMutableArrayRef CFArrayCreateMutable(CFAllocatorRef allocator, CFIndex capacity, const CFArrayCallBacks *callBacks) {
     CFArrayRef array = CFAlloc(CFArray);
     CFInit(array, CFArray);
     array->count = 0;
@@ -224,7 +224,7 @@ CFTypeCreate(CFDictionary, CFDictionaryFree);
 CFDictionaryKeyCallBacks kCFTypeDictionaryKeyCallBacks = (CFDictionaryKeyCallBacks)&kCFTypeDictionaryKeyCallBacks;
 CFDictionaryValueCallBacks kCFTypeDictionaryValueCallBacks = (CFDictionaryKeyCallBacks)&kCFTypeDictionaryValueCallBacks;
 
-CFMutableDictionaryRef CFDictionaryCreateMutable(__unused CFAllocatorRef allocator, CFIndex capacity, __unused const CFDictionaryKeyCallBacks *keyCallBacks, __unused const CFDictionaryValueCallBacks *valueCallBacks) {
+CFMutableDictionaryRef CFDictionaryCreateMutable(CFAllocatorRef allocator, CFIndex capacity, const CFDictionaryKeyCallBacks *keyCallBacks, const CFDictionaryValueCallBacks *valueCallBacks) {
     CFDictionaryRef dict = CFAlloc(CFDictionary);
     CFInit(dict, CFDictionary);
     dict->count = 0;
@@ -323,7 +323,7 @@ struct _CFBoolean _booleanFalse = (struct _CFBoolean){
 };
 const CFBooleanRef kCFBooleanFalse = (const CFBooleanRef)&_booleanFalse;
 
-void CFBooleanFree(__unused CFBooleanRef b) {}
+void CFBooleanFree(CFBooleanRef b) {}
 
 /* CFSet */
 
