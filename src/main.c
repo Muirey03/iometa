@@ -1510,7 +1510,7 @@ int main(int argc, const char **argv)
                                         }
                                         else
                                         {
-                                            if((void*)bti >= kernel && is_bti(bti))
+                                            if((void*)bti >= kernel && is_bti(bti) && (bti->op2 & 0xc0) == 0x40)
                                             {
                                                 refloc -= 4;
                                             }
@@ -1838,6 +1838,11 @@ int main(int argc, const char **argv)
                                     metaclass_t *meta = &metas.val[i];
                                     if(meta->addr == addr)
                                     {
+                                        bti_t* bti = (bti_t*)(adr - 1);
+                                        if((void*)bti >= kernel && is_bti(bti) && (bti->op2 & 0xc0) == 0x40)
+                                        {
+                                            func -= 4;
+                                        }
                                         DBG("Got func " ADDR " referencing MetaClass %s", func, meta->name);
                                         //candidates.idx = 0;
                                         if(!meta->vtab)
