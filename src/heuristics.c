@@ -329,7 +329,6 @@ Confidence key:
 5  = CBZ / CBNZ src_regs, ...
 0  = nothing found / method not overridden
 */
-// TODO: CCMP a la ApplePMPUserClient::externalMethod
 int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t src_regs, int* out_comp_imm, int* out_conf) {
     int best_guess = -1;
     int confidence = 0;
@@ -348,7 +347,10 @@ int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t
 
     // find comparison, not foolproof but does the job most of the time
     for (uint32_t* insn = fn; insn < fn_end; insn++) {
-        if (is_ret((ret_t*)insn)) break;
+        // reached another function stack frame, stop here:
+        if (insn > fn && (*insn & 0b11111111111111111111111110111111) == 0b11010101000000110010001100111111) /* PACIxSP */ {
+            break;
+        }
 
         // check for moving Rn into a secondary register
         if (is_orr_reg((orr_reg_t*)insn) && src_regs & (1 << ((orr_reg_t*)insn)->Rm)) {
