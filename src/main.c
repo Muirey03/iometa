@@ -68,6 +68,7 @@ extern int asprintf(char **restrict strp, const char *restrict fmt, ...);
 #include "symmap.h"
 #include "util.h"
 #include "CoreFoundation.h"
+#include "heuristics.h"
 
 extern CFTypeRef IOCFUnserialize(const char *buffer, CFAllocatorRef allocator, CFOptionFlags options, CFStringRef *errorString);
 
@@ -2624,7 +2625,6 @@ int main(int argc, const char **argv)
                     ent->overrides = !!overrides;
                     ent->auth = !!auth;
                     ent->reserved = 0;
-                    ent->code = (uint32_t*)addr2ptr(kernel, func);
 
                     if(authoritative && !structor && pent && !pent->authoritative)
                     {
@@ -2886,7 +2886,6 @@ int main(int argc, const char **argv)
                         ent->overrides = !!overrides;
                         ent->auth = !!auth;
                         ent->reserved = 0;
-                        ent->code = (uint32_t*)addr2ptr(kernel, func);
                     }
                 }
             }
@@ -3463,6 +3462,13 @@ int main(int argc, const char **argv)
                 return -1;
             }
             free(bundleList);
+        }
+    }
+
+    // muirey heuristics :)
+    if (opt.emethods) {
+        if (do_heuristics(kernel, kbase, fixupKind, &metas, bsyms, nsyms)) {
+            return -1;
         }
     }
 

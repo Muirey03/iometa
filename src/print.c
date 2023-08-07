@@ -45,8 +45,7 @@ static bool iometa_print_init(metaclass_t **list, size_t lsize, opt_t opt, void 
 
 static bool emethods_print_class(metaclass_t *meta, opt_t opt, metaclass_t *OSMetaClass, print_sym_t print_sym, void *arg)
 {
-    int nmethods = find_client_nmethods(meta);
-    printf("%s:%d\n", meta->name, nmethods);
+    printf("%s:%d\n", meta->name, meta->n_externalmethods);
     return true;
 }
 

@@ -335,6 +335,17 @@ typedef struct
              op     : 20;
 } bti_t;
 
+typedef struct
+{
+    uint32_t Rm     :  5,
+             Rn     :  5,
+             M      :  1,
+             A      :  1,
+             op     : 12,
+             Z      :  1,
+             op2    :  7;
+} blr_t;
+
 typedef uint32_t nop_t;
 typedef uint32_t ret_t;
 #pragma pack()
@@ -858,6 +869,12 @@ static inline bool is_ands_reg(and_reg_t *and)
 static inline bool is_ands(and_t *and)
 {
     return and->op == 0b11100100;
+}
+
+static inline bool is_blr(blr_t *blr)
+{
+    return blr->op2 == 0b1101011 &&
+           blr->op == 0b001111110000;
 }
 
 // and/orr/eor - holy clusterfuck

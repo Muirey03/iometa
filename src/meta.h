@@ -34,7 +34,6 @@ typedef struct vtab_entry
              overrides     :  1,
              auth          :  1,
              reserved      : 12;
-    uint32_t* code;
 } vtab_entry_t;
 
 typedef struct metaclass
@@ -59,6 +58,7 @@ typedef struct metaclass
              duplicate      :  1,
              has_dependents :  1,
              reserved       : 27;
+    int n_externalmethods;
 } metaclass_t;
 
 typedef struct
@@ -78,7 +78,5 @@ void add_metaclass(void *kernel, kptr_t kbase, fixup_kind_t fixupKind, void *arg
 void meta_constructor_cb(void *kernel, kptr_t kbase, mach_seg_t *seg, fixup_kind_t fixupKind, bool want_vtabs, void *metas, void *names, sym_t *bsyms, size_t nsyms, a64_state_t *state, uint32_t *fnstart, uint32_t *bl, kptr_t bladdr, void *arg);
 void meta_alt_constructor_cb(void *kernel, kptr_t kbase, mach_seg_t *seg, fixup_kind_t fixupKind, bool want_vtabs, void *metas, void *names, sym_t *bsyms, size_t nsyms, a64_state_t *state, uint32_t *fnstart, uint32_t *bl, kptr_t bladdr, void *arg);
 void find_meta_constructor_calls(void *kernel, mach_hdr_t *hdr, kptr_t kbase, fixup_kind_t fixupKind, bool have_plk_text_exec, bool want_vtabs, void *arr, void *metas, void *names, sym_t *bsyms, size_t nsyms, meta_constructor_cb_t cb, void *arg);
-
-int find_client_nmethods(metaclass_t *meta);
 
 #endif
