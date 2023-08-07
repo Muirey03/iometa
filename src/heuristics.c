@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <string.h>
 
 #include "heuristics.h"
 #include "a64.h"
