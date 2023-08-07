@@ -326,10 +326,10 @@ Confidence key:
 40 = SUBS x?, src_regs, #...
 20 = CMP x?, #...
 10 = SUBS x?, x?, #...
+5  = CBZ / CBNZ src_regs, ...
 0  = nothing found / method not overridden
 */
 // TODO: CCMP a la ApplePMPUserClient::externalMethod
-// TODO: CBZ / CBNZ for single method clients
 int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t src_regs, int* out_comp_imm, int* out_conf) {
     int best_guess = -1;
     int confidence = 0;
@@ -348,8 +348,6 @@ int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t
 
     // find comparison, not foolproof but does the job most of the time
     for (uint32_t* insn = fn; insn < fn_end; insn++) {
-        kptr_t addr = off2addr(kernel, (uintptr_t)insn - (uintptr_t)kernel);
-
         if (is_ret((ret_t*)insn)) break;
 
         // check for moving Rn into a secondary register
@@ -373,7 +371,9 @@ int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t
         }
 
         sub_imm_t* subs = (sub_imm_t*)insn;
+        cbz_t* cbz = (cbz_t*)insn;
         if (is_subs_imm(subs)) {
+            // this is some comparison:
             uint32_t imm = get_add_sub_imm(subs) + 1;
 
             // CMP + CSEL + ADRP + ADD == jumptable (aka. switch statement)
@@ -434,6 +434,16 @@ int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t
                 // SUBS x?, x?, #...
                 best_guess = imm;
                 confidence = 10;
+            }
+        }
+        else if (is_cbz(cbz) || is_cbnz(cbz)) {
+            if (src_regs & (1 << cbz->Rt)) {
+                // CBZ / CBNZ src_regs, ...
+                // less compelling than a cmp
+                if (confidence < 5) {
+                    best_guess = 1;
+                    confidence = 5;
+                }
             }
         }
     }
