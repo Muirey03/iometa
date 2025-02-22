@@ -1021,11 +1021,11 @@ static bool vtab_via_getMetaClass_ptr_cb(const kptr_t *ptr, void *arg)
         {
             if(meta->vtab != -1)
             {
-                WRN("More than one vtab for %s: " ADDR, meta->name, meta->vtab);
+                DBG(1, "More than one vtab for %s: " ADDR, meta->name, meta->vtab);
                 //ARRPUSH(candidates, meta->vtab);
                 meta->vtab = -1;
             }
-            WRN("More than one vtab for %s: " ADDR, meta->name, ref);
+            DBG(1, "More than one vtab for %s: " ADDR, meta->name, ref);
             //ARRPUSH(candidates, ref);
         }
     }
