@@ -29,12 +29,22 @@ void *memmem (const void *haystack, size_t hs_len, const void *needle, size_t ne
 }
 #endif
 
+// XXX TMP TODO
+extern const mach_hdr_t* __tmp_macho_get_hdr(macho_t *macho);
+#define FOREACH_CMD(_hdr, _cmd) \
+for( \
+    mach_lc_t *_cmd = (mach_lc_t*)(_hdr + 1), *_end = (mach_lc_t*)((uintptr_t)_cmd + _hdr->sizeofcmds - sizeof(mach_lc_t)); \
+    _cmd <= _end; \
+    _cmd = (mach_lc_t*)((uintptr_t)_cmd + _cmd->cmdsize) \
+)
+// XXX TMP TODO
+
 uint32_t g_externalMethod_idx = -1;
 uint32_t g_externalMethod2_idx = -1;
 uint32_t g_getTargetAndMethodForIndex_idx = -1;
 kptr_t g_dispatchExternalMethod_addr = 0;
 
-mach_hdr_t* fileset_macho_get_kext(mach_hdr_t* kernel, const char* fsent_name) {
+const mach_hdr_t* fileset_macho_get_kext(const mach_hdr_t* kernel, const char* fsent_name) {
     FOREACH_CMD(kernel, cmd) {
         if(cmd->cmd == LC_FILESET_ENTRY) {
             mach_fileent_t *ent = (mach_fileent_t*)cmd;
@@ -48,12 +58,12 @@ mach_hdr_t* fileset_macho_get_kext(mach_hdr_t* kernel, const char* fsent_name) {
     return NULL;
 }
 
-mach_sec_t* hdr_get_section(mach_hdr_t* hdr, const char* segname, const char* sectname) {
+mach_sec_t* hdr_get_section(const mach_hdr_t* hdr, const char* segname, const char* sectname) {
     if (!hdr)
         return NULL;
 
     FOREACH_CMD(hdr, cmd) {
-        if(cmd->cmd == MACH_SEGMENT) {
+        if(cmd->cmd == LC_SEGMENT_64) {
             mach_seg_t *seg = (mach_seg_t*)cmd;
             if (strncmp(seg->segname, segname, sizeof(seg->segname)) == 0) {
                 // found segment
@@ -78,7 +88,7 @@ const char* start_of_string(const char* s) {
     return s;
 }
 
-int find_externalMethod_idx(void* kernel, metaclass_t* IOUserClient, metaclass_t* IOUserClient2022, uint32_t* out_idx) {
+int find_externalMethod_idx(macho_t* macho, metaclass_t* IOUserClient, metaclass_t* IOUserClient2022, uint32_t* out_idx) {
     for (size_t meth_idx = 0; meth_idx < IOUserClient->nmethods; meth_idx++) {
         vtab_entry_t* meth = &IOUserClient->methods[meth_idx];
         // easiest option is if we have symbols:
@@ -93,8 +103,8 @@ int find_externalMethod_idx(void* kernel, metaclass_t* IOUserClient, metaclass_t
     if (IOUserClient2022) {
         // find string:
         const char match_string[] = "wrong externalMethod for IOUserClient2022";
-        mach_hdr_t* hdr = (mach_hdr_t*)kernel;
-        mach_hdr_t* kernel_header = hdr->filetype == MH_FILESET ? fileset_macho_get_kext(hdr, "com.apple.kernel") : hdr;
+        const mach_hdr_t* hdr = __tmp_macho_get_hdr(macho);
+        const mach_hdr_t* kernel_header = hdr->filetype == MH_FILESET ? fileset_macho_get_kext(hdr, "com.apple.kernel") : hdr;
         mach_sec_t* text_cstring = hdr_get_section(kernel_header, "__TEXT", "__cstring");
         if (!text_cstring) {
             ERR("Failed to find com.apple.kernel:__TEXT.__cstring section.");
@@ -102,7 +112,7 @@ int find_externalMethod_idx(void* kernel, metaclass_t* IOUserClient, metaclass_t
         }
         void* range = (void*)((uintptr_t)kernel_header + text_cstring->offset);
         const char* found_str = start_of_string(memmem(range, text_cstring->size, match_string, sizeof(match_string) - 1));
-        kptr_t str_addr = off2addr(kernel, (uintptr_t)found_str - (uintptr_t)kernel);
+        kptr_t str_addr = macho_ptov(macho, found_str);
         
         // find string load:
         kptr_t str_load_addr = 0;
@@ -116,7 +126,7 @@ int find_externalMethod_idx(void* kernel, metaclass_t* IOUserClient, metaclass_t
             adr_t* adr = (adr_t*)insn;
             add_imm_t* add = (add_imm_t*)(insn + 1);
             if (is_adrp(adr) && is_add_imm(add)) {
-                kptr_t adr_addr = off2addr(kernel, (uintptr_t)adr - (uintptr_t)kernel);
+                kptr_t adr_addr = macho_ptov(macho, adr);
                 kptr_t load_addr = (adr_addr & ~0xfff) + get_adr_off(adr) + get_add_sub_imm(add);
                 if (load_addr == str_addr) {
                     str_load_addr = adr_addr;
@@ -146,7 +156,7 @@ int find_externalMethod_idx(void* kernel, metaclass_t* IOUserClient, metaclass_t
     return 1;
 }
 
-int find_getTargetAndMethodForIndex_idx(void* kernel, metaclass_t* IOUserClient, uint32_t* out_idx) {
+int find_getTargetAndMethodForIndex_idx(macho_t* macho, metaclass_t* IOUserClient, uint32_t* out_idx) {
     for (size_t meth_idx = 0; meth_idx < IOUserClient->nmethods; meth_idx++) {
         vtab_entry_t* meth = &IOUserClient->methods[meth_idx];
         // easiest option is if we have symbols:
@@ -157,7 +167,7 @@ int find_getTargetAndMethodForIndex_idx(void* kernel, metaclass_t* IOUserClient,
         }
     }
 
-    // instead, we look for the reference in IOUserClient::externalMethod:
+    // otherwise, we look for the reference in IOUserClient::externalMethod:
     /*
     LDR             X10, [X16,#0x970]
     ADD             X1, SP, #0x50+var_38    ; targetP
@@ -168,29 +178,28 @@ int find_getTargetAndMethodForIndex_idx(void* kernel, metaclass_t* IOUserClient,
     */
     #define TARGET_DIVERSIFIER 0xBDAA
     if (g_externalMethod_idx != -1) {
-        uint32_t* externalMethod = (uint32_t*)addr2ptr(kernel, IOUserClient->methods[g_externalMethod_idx].addr);
-        uint32_t* externalMethod_end = externalMethod + 0x100;
+        const uint32_t* externalMethod = macho_vtop(macho, IOUserClient->methods[g_externalMethod_idx].addr, 0x100 * 4);
+        const uint32_t* externalMethod_end = externalMethod + 0x100;
         add_imm_t* lastAdd = NULL;
-        blr_t* targetBlr = NULL;
-        for (uint32_t* insn = externalMethod; insn < externalMethod_end; insn++) {
+        br_t* targetBlr = NULL;
+        for (const uint32_t* insn = externalMethod; insn < externalMethod_end; insn++) {
             add_imm_t* add = (add_imm_t*)insn;
-            blr_t* blr = (blr_t*)insn;
+            br_t* blr = (br_t*)insn;
             if (is_add_imm(add) && add->Rd == 1 && add->Rn == 31) { // ADD X1, SP, ...
                 lastAdd = add;
+            } else if (is_blra((bra_t*)blr)) {
+                // authenticated branch, check PAC diversifier:
+                bra_t* blra = (bra_t*)insn;
+                movk_t* movk = (movk_t*)(blr - 1);
+                if (is_movk(movk) && movk->Rd == blra->Rm && movk->sf == 1 && movk->imm == TARGET_DIVERSIFIER) {
+                    targetBlr = blr;
+                    break;
+                }
             } else if (is_blr(blr)) {
-                if (blr->A) {
-                    // authenticated branch, check PAC diversifier:
-                    movk_t* movk = (movk_t*)(blr - 1);
-                    if (is_movk(movk) && movk->Rd == blr->Rm && movk->sf == 1 && movk->imm == TARGET_DIVERSIFIER) {
-                        targetBlr = blr;
-                        break;
-                    }
-                } else {
-                    // unauthenticated, just look for the stack reference:
-                    if (lastAdd && (uint32_t*)blr - (uint32_t*)lastAdd < 10) {
-                        targetBlr = blr;
-                        // getAsyncTargetAndMethodForIndex comes first, so we find the last occurence
-                    }
+                // unauthenticated, just look for the stack reference:
+                if (lastAdd && (uint32_t*)blr - (uint32_t*)lastAdd < 10) {
+                    targetBlr = blr;
+                    // getAsyncTargetAndMethodForIndex comes first, so we find the last occurence
                 }
             }
         }
@@ -202,9 +211,9 @@ int find_getTargetAndMethodForIndex_idx(void* kernel, metaclass_t* IOUserClient,
 
         // search backwards to find vtable offset:
         for (uint32_t* insn = (uint32_t*)targetBlr; insn >= externalMethod; insn--) {
-            ldr_imm_uoff_t* ldr = (ldr_imm_uoff_t*)insn;
-            if (is_ldr_imm_uoff(ldr) && ldr->Rt == targetBlr->Rn) {
-                uint32_t off = get_ldr_imm_uoff(ldr);
+            ldr_uoff_t* ldr = (ldr_uoff_t*)insn;
+            if (is_ldr_uoff(ldr) && ldr->Rt == targetBlr->Rn) {
+                uint32_t off = get_ldr_uoff(ldr);
                 *out_idx = off / 8;
                 return 0;
             }
@@ -213,7 +222,7 @@ int find_getTargetAndMethodForIndex_idx(void* kernel, metaclass_t* IOUserClient,
     return 1;
 }
 
-int find_externalMethod2_idx(void* kernel, metaclass_t* IOUserClient2022, metaclass_t** clients2022, size_t clients2022_count, uint32_t* out_idx) {
+int find_externalMethod2_idx(macho_t* macho, metaclass_t* IOUserClient2022, metaclass_t** clients2022, size_t clients2022_count, uint32_t* out_idx) {
     // pure virtual in IOUserClient2022, so find it in one of the subclasses:
     // I'm choosing IOSurfaceRootUserClient:
     metaclass_t* IOSurfaceRootUserClient = NULL;
@@ -251,9 +260,9 @@ int find_externalMethod2_idx(void* kernel, metaclass_t* IOUserClient2022, metacl
         bool found_adrl = false;
         bool found_mov = false;
 
-        uint32_t* fn = addr2ptr(kernel, IOSurfaceRootUserClient->methods[i].addr);
-        uint32_t* fn_end = fn + 0x10;
-        for (uint32_t* insn = fn; insn < fn_end; insn++) {
+        const uint32_t* fn = macho_vtop(macho, IOSurfaceRootUserClient->methods[i].addr, 0x10 * 4);
+        const uint32_t* fn_end = fn + 0x10;
+        for (const uint32_t* insn = fn; insn < fn_end; insn++) {
             if (is_adrp((adr_t*)insn) && is_add_imm((add_imm_t*)(insn + 1))) {
                 found_adrl = true;
             } else {
@@ -272,14 +281,12 @@ int find_externalMethod2_idx(void* kernel, metaclass_t* IOUserClient2022, metacl
     return 1;
 }
 
-int find_dispatchExternalMethod_addr(void* kernel, metaclass_t* IOUserClient2022, sym_t* bsyms, size_t nsyms, metaclass_t** clients2022, size_t clients2022_count, kptr_t* out_addr) {
+int find_dispatchExternalMethod_addr(macho_t* macho, metaclass_t* IOUserClient2022, metaclass_t** clients2022, size_t clients2022_count, kptr_t* out_addr) {
     // easiest option is if we have symbols:
-    if (nsyms > 0) {
-        kptr_t addr = find_sym_by_name("__ZN16IOUserClient202222dispatchExternalMethodEjP31IOExternalMethodArgumentsOpaquePK28IOExternalMethodDispatch2022mP8OSObjectPv", bsyms, nsyms);
-        if (addr) {
-            *out_addr = addr;
-            return 0;
-        }
+    kptr_t symaddr = macho_symbol(macho, "__ZN16IOUserClient202222dispatchExternalMethodEjP31IOExternalMethodArgumentsOpaquePK28IOExternalMethodDispatch2022mP8OSObjectPv");
+    if (symaddr) {
+        *out_addr = symaddr;
+        return 0;
     }
 
     // otherwise, we just look for what function a subclass branches to in ::externalMethod:
@@ -298,11 +305,11 @@ int find_dispatchExternalMethod_addr(void* kernel, metaclass_t* IOUserClient2022
             return 1;
         }
             
-        uint32_t* externalMethod = (uint32_t*)addr2ptr(kernel, IOSurfaceRootUserClient->methods[g_externalMethod2_idx].addr);
-        uint32_t* externalMethod_end = externalMethod + 0x10;
-        for (uint32_t* insn = externalMethod; insn < externalMethod_end; insn++) {
+        const uint32_t* externalMethod = macho_vtop(macho, IOSurfaceRootUserClient->methods[g_externalMethod2_idx].addr, 0x10 * 4);
+        const uint32_t* externalMethod_end = externalMethod + 0x10;
+        for (const uint32_t* insn = externalMethod; insn < externalMethod_end; insn++) {
             if (is_b((b_t*)insn) || is_bl((bl_t*)insn)) {
-                kptr_t addr = off2addr(kernel, (uintptr_t)insn - (uintptr_t)kernel);
+                kptr_t addr = macho_ptov(macho, insn);
                 *out_addr = addr + get_bl_off((bl_t*)insn);
                 return 0;
             }
@@ -311,27 +318,27 @@ int find_dispatchExternalMethod_addr(void* kernel, metaclass_t* IOUserClient2022
     return 1;
 }
 
-int find_client2022_nmethods(void* kernel, metaclass_t* meta, int* out_nmethods) {
+int find_client2022_nmethods(macho_t* macho, metaclass_t* meta, int* out_nmethods) {
     // get externalMethod:
     if (g_externalMethod2_idx >= meta->nmethods)
         return 1;
     vtab_entry_t* meth = &meta->methods[g_externalMethod2_idx];
     if (!meth->overrides)
         return 1;
-    uint32_t* fn = (uint32_t*)addr2ptr(kernel, meth->addr);
-    uint32_t* fn_end = fn + 0x80;
+    const uint32_t* fn = macho_vtop(macho, meth->addr, 0x80 * 4);
+    const uint32_t* fn_end = fn + 0x80;
     if (!fn)
         return 1;
     
     // find store to w4:
     int nmethods = -1;
-    for (uint32_t* insn = fn; insn < fn_end; insn++) {
+    for (const uint32_t* insn = fn; insn < fn_end; insn++) {
         movz_t* mov = (movz_t*)insn;
         bl_t* bl = (bl_t*)insn;
         if (is_movz(mov) && mov->Rd == 4) {
             nmethods = get_movzk_imm(mov);
         } else if (is_b((b_t*)bl) || is_bl(bl)) {
-            kptr_t target = off2addr(kernel, (uintptr_t)bl - (uintptr_t)kernel) + get_bl_off(bl);
+            kptr_t target = macho_ptov(macho, bl) + get_bl_off(bl);
             if (target == g_dispatchExternalMethod_addr) {
                 if (nmethods == -1) {
                     WRN("Failed to count nmethods for class: %s", meta->name);
@@ -355,7 +362,7 @@ Confidence key:
 5  = CBZ / CBNZ src_regs, ...
 0  = nothing found / method not overridden
 */
-int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t src_regs, int* out_comp_imm, int* out_conf) {
+int find_comparison(macho_t* macho, metaclass_t *meta, uint32_t meth_idx, uint32_t src_regs, int* out_comp_imm, int* out_conf) {
     int best_guess = -1;
     int confidence = 0;
     ssize_t stack_off = -1;
@@ -366,13 +373,13 @@ int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t
     vtab_entry_t* meth = &meta->methods[meth_idx];
     if (!meth->overrides)
         return 1;
-    uint32_t* fn = (uint32_t*)addr2ptr(kernel, meth->addr);
-    uint32_t* fn_end = fn + 0x80;
+    const uint32_t* fn = macho_vtop(macho, meth->addr, 0x80 * 4);
+    const uint32_t* fn_end = fn + 0x80;
     if (!fn)
         return 1;
 
     // find comparison, not foolproof but does the job most of the time
-    for (uint32_t* insn = fn; insn < fn_end; insn++) {
+    for (const uint32_t* insn = fn; insn < fn_end; insn++) {
         // reached another function stack frame, stop here:
         if (insn > fn && (*insn & 0b11111111111111111111111110111111) == 0b11010101000000110010001100111111) /* PACIxSP */ {
             break;
@@ -485,23 +492,23 @@ int find_comparison(void* kernel, metaclass_t *meta, uint32_t meth_idx, uint32_t
     return 1;
 }
 
-int find_client_legacy_nmethods(void* kernel, metaclass_t* meta, int* out_nmethods, int* out_conf) {
+int find_client_legacy_nmethods(macho_t* macho, metaclass_t* meta, int* out_nmethods, int* out_conf) {
     int comp_imm = 0;
-    int ret = find_comparison(kernel, meta, g_getTargetAndMethodForIndex_idx, 1 << 2, &comp_imm, out_conf);
+    int ret = find_comparison(macho, meta, g_getTargetAndMethodForIndex_idx, 1 << 2, &comp_imm, out_conf);
     if (ret == 0)
         *out_nmethods = comp_imm;
     return ret;
 }
 
-int find_client_nmethods(void* kernel, metaclass_t* meta, int* out_nmethods, int* out_conf) {
+int find_client_nmethods(macho_t* macho, metaclass_t* meta, int* out_nmethods, int* out_conf) {
     int comp_imm = 0;
-    int ret = find_comparison(kernel, meta, g_externalMethod_idx, 1 << 1, &comp_imm, out_conf);
+    int ret = find_comparison(macho, meta, g_externalMethod_idx, 1 << 1, &comp_imm, out_conf);
     if (ret == 0)
         *out_nmethods = comp_imm;
     return ret;
 }
 
-int count_external_methods(void* kernel, kptr_t kbase, fixup_kind_t fixupKind, void* classes, sym_t* bsyms, size_t nsyms) {
+int count_external_methods(macho_t* macho, void* classes) {
     ARRCAST(metaclass_t, metas, classes);
     metaclass_t* IOUserClient = NULL;
     metaclass_t* IOUserClient2022 = NULL;
@@ -581,19 +588,19 @@ int count_external_methods(void* kernel, kptr_t kbase, fixup_kind_t fixupKind, v
     }
 
     // patchfind method indexes:
-    if (find_externalMethod_idx(kernel, IOUserClient, IOUserClient2022, &g_externalMethod_idx)) {
+    if (find_externalMethod_idx(macho, IOUserClient, IOUserClient2022, &g_externalMethod_idx)) {
         ERR("Failed to find IOUserClient::externalMethod in vtable.");
         return 1;
     }
-    if (find_getTargetAndMethodForIndex_idx(kernel, IOUserClient, &g_getTargetAndMethodForIndex_idx)) {
+    if (find_getTargetAndMethodForIndex_idx(macho, IOUserClient, &g_getTargetAndMethodForIndex_idx)) {
         ERR("Failed to find IOUserClient::getTargetAndMethodForIndex in vtable.");
         return 1;
     }
-    if (IOUserClient2022 && find_externalMethod2_idx(kernel, IOUserClient2022, clients2022, clients2022_count, &g_externalMethod2_idx)) {
+    if (IOUserClient2022 && find_externalMethod2_idx(macho, IOUserClient2022, clients2022, clients2022_count, &g_externalMethod2_idx)) {
         ERR("Failed to find IOUserClient2022::externalMethod in vtable.");
         return 1;
     }
-    if (IOUserClient2022 && find_dispatchExternalMethod_addr(kernel, IOUserClient2022, bsyms, nsyms, clients2022, clients2022_count, &g_dispatchExternalMethod_addr)) {
+    if (IOUserClient2022 && find_dispatchExternalMethod_addr(macho, IOUserClient2022, clients2022, clients2022_count, &g_dispatchExternalMethod_addr)) {
         ERR("Failed to find IOUserClient2022::dispatchExternalMethod.");
         return 1;
     }
@@ -604,8 +611,8 @@ int count_external_methods(void* kernel, kptr_t kbase, fixup_kind_t fixupKind, v
         int nmethods1, nmethods2, confidence1, confidence2 = 0;
         if (clients[i] && clients[i] != IOUserClient && clients[i] != IOUserClient2022) { // clients array can contain NULLs
             nmethods1 = 0; nmethods2 = 0; confidence1 = 0; confidence2 = 0;
-            int ret1 = find_client_nmethods(kernel, clients[i], &nmethods1, &confidence1);
-            int ret2 = find_client_legacy_nmethods(kernel, clients[i], &nmethods2, &confidence2);
+            int ret1 = find_client_nmethods(macho, clients[i], &nmethods1, &confidence1);
+            int ret2 = find_client_legacy_nmethods(macho, clients[i], &nmethods2, &confidence2);
 
             if (ret1 && ret2) {
                 clients[i]->n_externalmethods = clients[i]->parentP->n_externalmethods;
@@ -619,7 +626,7 @@ int count_external_methods(void* kernel, kptr_t kbase, fixup_kind_t fixupKind, v
     }
     for (size_t i = 0; i < clients2022_count; i++) {
         if (clients2022[i] != IOUserClient2022) {
-            int ret = find_client2022_nmethods(kernel, clients2022[i], &clients2022[i]->n_externalmethods);
+            int ret = find_client2022_nmethods(macho, clients2022[i], &clients2022[i]->n_externalmethods);
             if (ret) {
                 clients2022[i]->n_externalmethods = clients2022[i]->parentP->n_externalmethods;
             }
@@ -633,6 +640,6 @@ int count_external_methods(void* kernel, kptr_t kbase, fixup_kind_t fixupKind, v
     return 0;
 }
 
-int do_heuristics(void* kernel, kptr_t kbase, fixup_kind_t fixupKind, void* classes, sym_t* bsyms, size_t nsyms) {
-    return count_external_methods(kernel, kbase, fixupKind, classes, bsyms, nsyms);
+int do_heuristics(macho_t* macho, void* classes) {
+    return count_external_methods(macho, classes);
 }

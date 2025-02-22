@@ -1,4 +1,10 @@
+#ifndef HEURISTICS_H
+#define HEURISTICS_H
+
 #include "meta.h"
 #include "util.h"
+#include "macho.h"
 
-int do_heuristics(void* kernel, kptr_t kbase, fixup_kind_t fixupKind, void* classes, sym_t* bsyms, size_t nsyms);
+int do_heuristics(macho_t* macho, void* classes);
+
+#endif // HEURISTICS_H
