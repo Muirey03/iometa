@@ -4433,7 +4433,7 @@ int main(int argc, const char **argv)
 
     // muirey heuristics :)
     if (opt.emethods) {
-        if (do_heuristics(kernel, kbase, fixupKind, &metas, bsyms, nsyms)) {
+        if (do_heuristics(macho, &metas)) {
             return -1;
         }
     }

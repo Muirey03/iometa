@@ -350,17 +350,6 @@ typedef struct
              op1 : 24;
 } bti_t;
 
-typedef struct
-{
-    uint32_t Rm     :  5,
-             Rn     :  5,
-             M      :  1,
-             A      :  1,
-             op     : 12,
-             Z      :  1,
-             op2    :  7;
-} blr_t;
-
 typedef uint32_t nop_t;
 typedef uint32_t ret_t;
 #pragma pack()
@@ -977,12 +966,6 @@ static inline bool is_sbfm(const sbfm_t *sbfm)
 static inline bool is_ubfm(const ubfm_t *ubfm)
 {
     return ubfm->op == 0b10100110;
-}
-
-static inline bool is_blr(blr_t *blr)
-{
-    return blr->op2 == 0b1101011 &&
-           blr->op == 0b001111110000;
 }
 
 // and/orr/eor - holy clusterfuck
